@@ -154,6 +154,19 @@ router.put("/:id/hero", uploadImage.single("cover_image"), (req, res) => {
 });
 
 /* ===============================
+   UPLOAD IMAGE FROM EDITOR
+=============================== */
+router.post("/upload-editor-image", uploadImage.single("image"), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ message: "No file uploaded" });
+  }
+
+  res.json({
+    url: `/uploads/jelajahi/images/${req.file.filename}`,
+  });
+});
+
+/* ===============================
    DELETE PAGE
 =============================== */
 router.delete("/:id", (req, res) => {
@@ -194,16 +207,6 @@ router.get("/", (req, res) => {
         return res.status(500).json({ message: "DB error" });
       }
 
-      res.json(rows);
-    },
-  );
-});
-
-router.get("/pages", (req, res) => {
-  db.query(
-    "SELECT id, title, slug FROM jelajahi_pages ORDER BY id DESC",
-    (err, rows) => {
-      if (err) return res.status(500).json({ message: "DB error" });
       res.json(rows);
     },
   );

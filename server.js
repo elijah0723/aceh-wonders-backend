@@ -6,12 +6,15 @@ import { fileURLToPath } from "url";
 import db from "./config/db.js";
 import uploadRoutes from "./routes/upload.js";
 
+import heroRoutes from "./routes/hero/index.js"
+
 import homeRoutes from "./routes/home/index.js";
 import wisataRoutes from "./routes/wisata/index.js";
 import jelajahiRoutes from "./routes/jelajahi/index.js";
 import kulinerRoutes from "./routes/kuliner/index.js"
 import eventRoutes from "./routes/event/index.js"
 import adminRoutes from "./routes/admin/index.js"
+import thingsToDoRoutes from "./routes/thingstodo/index.js";
 
 
 dotenv.config();
@@ -30,6 +33,9 @@ app.use(express.urlencoded({ extended: true }));
 // serve uploads
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
+//hero routes
+app.use("/hero", heroRoutes)
+
 // routes
 app.use("/admin", adminRoutes)
 app.use("/home", homeRoutes);
@@ -37,6 +43,8 @@ app.use("/jelajahi", jelajahiRoutes);
 app.use("/wisata", wisataRoutes);
 app.use("/kuliner", kulinerRoutes);
 app.use("/event", eventRoutes);
+
+app.use("/things-to-do", thingsToDoRoutes);
 
 // database
 db.connect((err) => {
