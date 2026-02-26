@@ -19,7 +19,7 @@ const upload = multer({ storage });
 /* ================= GET ALL CARDS ================= */
 
 router.get("/", (req, res) => {
-  db.query("SELECT * FROM wisata_cards ORDER BY id DESC", (err, rows) => {
+  db.query("SELECT * FROM wisata_cards ORDER BY position ASC", (err, rows) => {
     if (err) {
       console.error(err);
       return res.status(500).json({ message: "Gagal ambil cards" });
@@ -88,18 +88,49 @@ router.post("/", upload.single("image"), (req, res) => {
 
   // ================= CUSTOM CARD =================
   else {
+db.query(
+  "SELECT COALESCE(MAX(position),0)+1 AS nextPos FROM wisata_cards",
+  (err, rows) => {
+    const nextPos = rows[0].nextPos;
+
     db.query(
-      "INSERT INTO wisata_cards (title, slug, image_url) VALUES (?, ?, ?)",
-      [title, slug, image_url],
-      (err, result) => {
-        if (err) {
-          console.error(err);
-          return res.status(500).json({ message: "Gagal tambah card" });
-        }
+      "INSERT INTO wisata_cards (title, slug, image_url, position) VALUES (?, ?, ?, ?)",
+      [title, slug, image_url, nextPos],
+      (err2, result) => {
+        if (err2) return res.status(500).json({ message: "Gagal tambah card" });
         res.json({ id: result.insertId, slug });
       },
     );
+  },
+);
   }
+});
+
+router.put("/reorder", (req, res) => {
+  const { items } = req.body;
+  if (!items || !Array.isArray(items)) {
+    return res.status(400).json({ message: "Invalid data" });
+  }
+
+  const queries = items.map((item, index) => {
+    return new Promise((resolve, reject) => {
+      db.query(
+        "UPDATE wisata_cards SET position=? WHERE id=?",
+        [index, item.id],
+        (err) => {
+          if (err) reject(err);
+          else resolve();
+        },
+      );
+    });
+  });
+
+  Promise.all(queries)
+    .then(() => res.json({ message: "Reordered" }))
+    .catch((err) => {
+      console.error(err);
+      res.status(500).json({ message: "Gagal reorder" });
+    });
 });
 
 /* ================= UPDATE CARD ================= */

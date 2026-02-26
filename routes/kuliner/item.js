@@ -7,6 +7,51 @@ import slugify from "slugify";
 
 const router = express.Router();
 
+router.get("/slug/:slug", async (req, res) => {
+  try {
+    const { slug } = req.params;
+
+    const [rows] = await db
+      .promise()
+      .query("SELECT * FROM kuliner_item WHERE slug = ? LIMIT 1", [slug]);
+
+    if (!rows.length) {
+      return res.status(404).json({ message: "Not found" });
+    }
+
+    const item = rows[0];
+
+    // ambil video tambahan
+    const [extraVideos] = await db
+      .promise()
+      .query("SELECT * FROM kuliner_item_video WHERE item_id=?", [item.id]);
+
+    // 🔥 Gabungkan video utama + video tambahan
+    let allVideos = [];
+
+    if (item.vertical_video) {
+      allVideos.push({
+        id: "main",
+        video: item.vertical_video,
+      });
+    }
+
+    extraVideos.forEach((v) => {
+      allVideos.push({
+        id: v.id,
+        video: v.video,
+      });
+    });
+
+    item.videos = allVideos;
+
+    res.json(item);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 /* =======================================================
    STORAGE CONFIG
 ======================================================= */
@@ -54,6 +99,39 @@ const videoStorage = multer.diskStorage({
 });
 
 const uploadVideo = multer({ storage: videoStorage });
+
+router.delete("/video/:videoId", async (req, res) => {
+  try {
+    const { videoId } = req.params;
+
+    // ambil nama file dulu
+    const [rows] = await db
+      .promise()
+      .query("SELECT video FROM kuliner_item_video WHERE id=?", [videoId]);
+
+    if (!rows.length) {
+      return res.status(404).json({ message: "Video tidak ditemukan" });
+    }
+
+    const fileName = rows[0].video;
+    const filePath = "uploads/kuliner/items/video/" + fileName;
+
+    // hapus file dari folder
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+
+    // hapus dari database
+    await db
+      .promise()
+      .query("DELETE FROM kuliner_item_video WHERE id=?", [videoId]);
+
+    res.json({ message: "Video berhasil dihapus" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
 
 
 /* =======================================================
@@ -111,13 +189,11 @@ router.post("/", upload.single("gambar"), async (req, res) => {
   }
 });
 
-/* =======================================================
-   UPDATE ITEM (SUPPORT SIGNATURE)
-======================================================= */
-
-router.put("/:id", upload.single("gambar"), async (req, res) => {
+router.put("/:id/hero", upload.single("cover_image"), async (req, res) => {
   try {
-    const { nama, deskripsi, is_signature } = req.body;
+    if (!req.file) {
+      return res.status(400).json({ message: "Gambar wajib diupload" });
+    }
 
     const [oldData] = await db
       .promise()
@@ -127,47 +203,60 @@ router.put("/:id", upload.single("gambar"), async (req, res) => {
       return res.status(404).json({ message: "Item tidak ditemukan" });
     }
 
-    let gambar = oldData[0].gambar;
-    let slug = null;
-
-    // Kalau update nama
-    if (nama) {
-      slug = slugify(nama, {
-        lower: true,
-        strict: true,
-      });
+    // hapus gambar lama
+    if (oldData[0].gambar) {
+      const oldPath = "uploads/kuliner/items/" + oldData[0].gambar;
+      if (fs.existsSync(oldPath)) {
+        fs.unlinkSync(oldPath);
+      }
     }
 
-    // Kalau upload gambar baru
-    if (req.file) {
-      gambar = req.file.filename;
+    await db
+      .promise()
+      .query("UPDATE kuliner_item SET gambar=? WHERE id=?", [
+        req.file.filename,
+        req.params.id,
+      ]);
 
-      if (oldData[0].gambar) {
-        const oldPath = "uploads/kuliner/items/" + oldData[0].gambar;
+    res.json({ message: "Hero berhasil diupdate" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
 
-        if (fs.existsSync(oldPath)) {
-          fs.unlinkSync(oldPath);
-        }
-      }
+/* =======================================================
+   UPDATE ITEM (SUPPORT SIGNATURE)
+======================================================= */
+
+router.put("/:id", async (req, res) => {
+  try {
+    const { nama, deskripsi, content, maps_link, is_signature } = req.body;
+
+    let slug = null;
+    if (nama) {
+      slug = slugify(nama, { lower: true, strict: true });
     }
 
     await db.promise().query(
       `
       UPDATE kuliner_item 
       SET 
-        nama = COALESCE(?, nama),
-        slug = COALESCE(?, slug),
-        deskripsi = COALESCE(?, deskripsi),
-        gambar = COALESCE(?, gambar),
-        is_signature = COALESCE(?, is_signature)
+        nama = ?,
+        slug = ?,
+        deskripsi = ?,
+        content = ?,
+        maps_link = ?,
+        is_signature = ?
       WHERE id = ?
       `,
       [
-        nama || null,
-        slug || null,
-        deskripsi || null,
-        gambar || null,
-        is_signature !== undefined ? is_signature : null,
+        nama,
+        slug,
+        deskripsi,
+        content,
+        maps_link,
+        is_signature || 0,
         req.params.id,
       ],
     );
@@ -178,10 +267,10 @@ router.put("/:id", upload.single("gambar"), async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 /* =======================================================
    UPLOAD VERTICAL VIDEO
 ======================================================= */
-
 router.put(
   "/:id/video",
   uploadVideo.single("vertical_video"),
@@ -268,6 +357,29 @@ router.delete("/:id/video", async (req, res) => {
   }
 });
 
+router.post(
+  "/:id/video",
+  uploadVideo.single("vertical_video"),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "Video wajib diupload" });
+      }
+
+      await db
+        .promise()
+        .query(
+          "INSERT INTO kuliner_item_video (item_id, video) VALUES (?, ?)",
+          [req.params.id, req.file.filename],
+        );
+
+      res.json({ message: "Video berhasil ditambahkan" });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ message: "Server error" });
+    }
+  },
+);
 
 
 /* =======================================================
