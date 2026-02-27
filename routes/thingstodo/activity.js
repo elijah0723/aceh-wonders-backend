@@ -7,7 +7,7 @@ const router = express.Router();
 
 /* ================= MULTER ================= */
 const storage = multer.diskStorage({
-  destination: "uploads/",
+  destination: "uploads/things-to-do",
   filename: (req, file, cb) => {
     cb(null, Date.now() + "-" + file.originalname);
   },

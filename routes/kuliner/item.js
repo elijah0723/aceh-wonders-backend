@@ -228,14 +228,43 @@ router.put("/:id/hero", upload.single("cover_image"), async (req, res) => {
 /* =======================================================
    UPDATE ITEM (SUPPORT SIGNATURE)
 ======================================================= */
-
-router.put("/:id", async (req, res) => {
+router.put("/:id", upload.single("gambar"), async (req, res) => {
   try {
     const { nama, deskripsi, content, maps_link, is_signature } = req.body;
 
-    let slug = null;
-    if (nama) {
-      slug = slugify(nama, { lower: true, strict: true });
+    // Ambil data lama dulu
+    const [oldData] = await db
+      .promise()
+      .query("SELECT * FROM kuliner_item WHERE id=?", [req.params.id]);
+
+    if (!oldData.length) {
+      return res.status(404).json({ message: "Item tidak ditemukan" });
+    }
+
+    const oldItem = oldData[0];
+
+    const finalNama = nama ?? oldItem.nama;
+    const finalSlug = nama
+      ? slugify(nama, { lower: true, strict: true })
+      : oldItem.slug;
+
+    const finalDeskripsi = deskripsi ?? oldItem.deskripsi;
+    const finalContent = content ?? oldItem.content;
+    const finalMaps = maps_link ?? oldItem.maps_link;
+    const finalSignature =
+      is_signature !== undefined ? is_signature : oldItem.is_signature;
+
+    let finalGambar = oldItem.gambar;
+
+    if (req.file) {
+      // hapus gambar lama
+      if (oldItem.gambar) {
+        const oldPath = "uploads/kuliner/items/" + oldItem.gambar;
+        if (fs.existsSync(oldPath)) {
+          fs.unlinkSync(oldPath);
+        }
+      }
+      finalGambar = req.file.filename;
     }
 
     await db.promise().query(
@@ -247,16 +276,18 @@ router.put("/:id", async (req, res) => {
         deskripsi = ?,
         content = ?,
         maps_link = ?,
-        is_signature = ?
+        is_signature = ?,
+        gambar = ?
       WHERE id = ?
       `,
       [
-        nama,
-        slug,
-        deskripsi,
-        content,
-        maps_link,
-        is_signature || 0,
+        finalNama,
+        finalSlug,
+        finalDeskripsi,
+        finalContent,
+        finalMaps,
+        finalSignature,
+        finalGambar,
         req.params.id,
       ],
     );
